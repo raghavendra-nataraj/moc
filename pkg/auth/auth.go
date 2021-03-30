@@ -135,6 +135,11 @@ func NewAuthorizerFromInput(tlsCert tls.Certificate, serverCertificate []byte, s
 	return NewBearerAuthorizer(JwtTokenProvider{}, transportCreds), nil
 }
 
+func NewAuthorizerFromInputs(tlsCert tls.Certificate, serverCertificate [][]byte, server string) (Authorizer, error) {
+	transportCreds := TransportCredentialsFromNodes(tlsCert, serverCertificate, server)
+	return NewBearerAuthorizer(JwtTokenProvider{}, transportCreds), nil
+}
+
 func NewAuthorizerForAuth(tokenString string, certificate string, server string) (Authorizer, error) {
 
 	serverPem, err := marshal.FromBase64(certificate)
@@ -284,6 +289,36 @@ func TransportCredentialsFromNode(tlsCert tls.Certificate, serverCertificate []b
 
 }
 
+func TransportCredentialsFromNodes(tlsCert tls.Certificate, serverCertificates [][]byte, server string) credentials.TransportCredentials {
+
+	certPool := x509.NewCertPool()
+	// Append the client certificates from the CA
+	for _, serverCertificate := range serverCertificates {
+		if ok := certPool.AppendCertsFromPEM(serverCertificate); !ok {
+			return credentials.NewTLS(&tls.Config{})
+		}
+	}
+	verifyPeerCertificate := func(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
+		// This is the for extra verification
+		for _, rawcert := range rawCerts {
+			_, err := x509.ParseCertificate(rawcert)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	return credentials.NewTLS(&tls.Config{
+		ServerName:            server,
+		Certificates:          []tls.Certificate{tlsCert},
+		RootCAs:               certPool,
+		InsecureSkipVerify:    true,
+		VerifyPeerCertificate: verifyPeerCertificate,
+	})
+
+}
+
 func (c JwtTokenProvider) GetRequestMetadata(ctx context.Context, uri ...string) (map[string]string, error) {
 	return map[string]string{
 		"authorization": c.RawData,
@@ -344,7 +379,6 @@ func GetWssdConfigLocation() string {
 
 // GetWssdConfigLocationName gets the path for access filename from environment + subfolder with file name fileName
 func GetMocConfigLocationName(subfolder, filename string) string {
-	wssdConfigPath := os.Getenv(WssdConfigPath)
 
 	file := AccessFileDefaultName
 	if filename != "" {
@@ -354,14 +388,13 @@ func GetMocConfigLocationName(subfolder, filename string) string {
 	if err != nil {
 		panic(err)
 	}
-	if wssdConfigPath == "" || !strings.HasSuffix(wssdConfigPath, filepath.Join(wd, subfolder, file)) {
-		// Create the default config path and set the
-		// env variable
-		defaultPath := filepath.Join(wd, DefaultWSSDFolder, subfolder)
-		os.MkdirAll(defaultPath, os.ModePerm)
-		wssdConfigPath = filepath.Join(defaultPath, file)
-		os.Setenv(WssdConfigPath, wssdConfigPath)
-	}
+
+	// Create the default config path and set the
+	// env variable
+	defaultPath := filepath.Join(wd, DefaultWSSDFolder, subfolder)
+	os.MkdirAll(defaultPath, os.ModePerm)
+	wssdConfigPath := filepath.Join(defaultPath, file)
+
 	return wssdConfigPath
 }
 
@@ -547,12 +580,17 @@ func GetServerCertificateFromHash(server, caCertHash string) (string, error) {
 
 // PrintAccessFile stores wssdConfig in WssdConfigLocation
 func PrintAccessFile(accessFile WssdConfig) error {
-	return marshal.ToJSONFile(accessFile, GetWssdConfigLocation())
+
+	marshal.ToJSONFile(accessFile, GetWssdConfigLocation())
+	fmt.Println("Writtingggggggggggggggggggggggggg", accessFile, GetWssdConfigLocation())
+	return nil
 }
 
 // PrintAccessFileByName stores wssdConfig in GetWssdConfigLocationName
 func PrintAccessFileByName(accessFile WssdConfig, subfolder, filename string) error {
-	return marshal.ToJSONFile(accessFile, GetMocConfigLocationName(subfolder, filename))
+	marshal.ToJSONFile(accessFile, GetMocConfigLocationName(subfolder, filename))
+	fmt.Println("Writtingggggggggggggggggggggggggg namemeeeeeeee", accessFile, GetMocConfigLocationName(subfolder, filename))
+	return nil
 }
 
 func readAccessFile(accessFileLocation string) (WssdConfig, error) {
